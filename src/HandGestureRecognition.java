@@ -38,7 +38,7 @@ public class HandGestureRecognition {
             }
 
             Mat processedFrame = detectHand(frame);
-            HighGui.imshow("Detecção de Mão", processedFrame);
+            HighGui.imshow("Detector de Mão", processedFrame);
 
             if (HighGui.waitKey(30) == 27) break;
         }
@@ -79,11 +79,7 @@ public class HandGestureRecognition {
         Imgproc.morphologyEx(skinMask, skinMask, Imgproc.MORPH_CLOSE, kernel);
         Imgproc.GaussianBlur(skinMask, skinMask, new Size(3, 3), 0);
 
-        // 4. Converter máscara para BGR para exibição
-        Mat maskBGR = new Mat();
-        Imgproc.cvtColor(skinMask, maskBGR, Imgproc.COLOR_GRAY2BGR);
-
-        // 5. Encontrar contornos
+        // 4. Encontrar contornos
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
         Imgproc.findContours(skinMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
@@ -95,15 +91,7 @@ public class HandGestureRecognition {
             }
         }
 
-        // 6. Combinar imagens para exibição
-        Mat combined = new Mat();
-        List<Mat> imagesToCombine = new ArrayList<>();
-        imagesToCombine.add(processedFrame);
-        imagesToCombine.add(maskBGR);
-
-        Core.hconcat(imagesToCombine, combined);
-
-        return combined;
+        return processedFrame;
     }
 
     private static int findLargestContour(List<MatOfPoint> contours) {
@@ -120,13 +108,17 @@ public class HandGestureRecognition {
     }
 
     private static void drawHandContour(Mat frame, MatOfPoint contour) {
+        // Cor ciano futurista
+        Scalar contourColor = new Scalar(0, 255, 255); // Ciano
+        Scalar centerColor = new Scalar(255, 0, 255);  // Magenta
+
         // Desenhar contorno
-        Imgproc.drawContours(frame, Arrays.asList(contour), -1, new Scalar(0, 255, 0), 3);
+        Imgproc.drawContours(frame, Arrays.asList(contour), -1, contourColor, 2);
 
         // Calcular e desenhar centro
         Moments moments = Imgproc.moments(contour);
         Point center = new Point(moments.get_m10() / moments.get_m00(), moments.get_m01() / moments.get_m00());
-        Imgproc.circle(frame, center, 8, new Scalar(255, 0, 0), -1);
+        Imgproc.circle(frame, center, 6, centerColor, -1);
 
         // Calcular e desenhar casco convexo
         MatOfInt hull = new MatOfInt();
@@ -134,17 +126,17 @@ public class HandGestureRecognition {
 
         List<Point> hullPoints = new ArrayList<>();
         for (int i = 0; i < hull.rows(); i++) {
-            int idx = (int)hull.get(i, 0)[0];
+            int idx = (int) hull.get(i, 0)[0];
             hullPoints.add(contour.toList().get(idx));
         }
 
         MatOfPoint hullContour = new MatOfPoint();
         hullContour.fromList(hullPoints);
-        Imgproc.drawContours(frame, Arrays.asList(hullContour), -1, new Scalar(0, 0, 255), 2);
+        Imgproc.drawContours(frame, Arrays.asList(hullContour), -1, new Scalar(255, 0, 0), 1); // Azul fino
 
-        // Adicionar texto informativo
+        // Texto informativo minimalista
         String text = String.format("Area: %.0f", Imgproc.contourArea(contour));
-        Imgproc.putText(frame, text, new Point(center.x + 20, center.y),
-                Imgproc.FONT_HERSHEY_SIMPLEX, 0.7, new Scalar(255, 255, 255), 2);
+        Imgproc.putText(frame, text, new Point(center.x + 15, center.y),
+                Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, new Scalar(200, 200, 200), 1);
     }
 }
