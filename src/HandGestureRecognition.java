@@ -13,7 +13,9 @@ public class HandGestureRecognition {
 
     static {
         try {
-            System.load("C:\\Users\\Moacir\\Downloads\\opencv\\build\\java\\x64\\opencv_java4110.dll");
+            String configured = System.getenv("OPENCV_JAVA_LIBRARY");
+            if (configured != null && !configured.isBlank()) System.load(configured);
+            else System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
             System.out.println("OpenCV " + Core.VERSION + " carregado com sucesso");
         } catch (UnsatisfiedLinkError e) {
             System.err.println("Erro ao carregar OpenCV: " + e.getMessage());
@@ -31,6 +33,7 @@ public class HandGestureRecognition {
         if (camera == null) return;
 
         Mat frame = new Mat();
+        try {
         while (true) {
             if (!camera.read(frame) || frame.empty()) {
                 System.out.println("Problema ao capturar frame");
@@ -38,13 +41,17 @@ public class HandGestureRecognition {
             }
 
             Mat processedFrame = detectHand(frame);
-            HighGui.imshow("Detector de Mão", processedFrame);
-
-            if (HighGui.waitKey(30) == 27) break;
+            try {
+                HighGui.imshow("Detector de Mão", processedFrame);
+                if (HighGui.waitKey(30) == 27) break;
+            } finally { processedFrame.release(); }
         }
 
-        camera.release();
-        HighGui.destroyAllWindows();
+        } finally {
+            frame.release();
+            camera.release();
+            HighGui.destroyAllWindows();
+        }
     }
 
     private static VideoCapture initializeCamera() {
@@ -68,20 +75,23 @@ public class HandGestureRecognition {
 
         // 1. Pré-processamento
         Mat hsv = new Mat();
+        Mat skinMask = new Mat();
+        Mat kernel = new Mat();
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        try {
         Imgproc.cvtColor(frame, hsv, Imgproc.COLOR_BGR2HSV);
 
         // 2. Detecção de pele
-        Mat skinMask = new Mat();
         Core.inRange(hsv, LOWER_SKIN, UPPER_SKIN, skinMask);
 
         // 3. Melhoria da máscara
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, new Size(11, 11));
+        kernel.release();
+        kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, new Size(11, 11));
         Imgproc.morphologyEx(skinMask, skinMask, Imgproc.MORPH_CLOSE, kernel);
         Imgproc.GaussianBlur(skinMask, skinMask, new Size(3, 3), 0);
 
         // 4. Encontrar contornos
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
         Imgproc.findContours(skinMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
         if (!contours.isEmpty()) {
@@ -92,6 +102,13 @@ public class HandGestureRecognition {
         }
 
         return processedFrame;
+        } catch (RuntimeException e) {
+            processedFrame.release();
+            throw e;
+        } finally {
+            hsv.release(); skinMask.release(); kernel.release(); hierarchy.release();
+            contours.forEach(Mat::release);
+        }
     }
 
     private static int findLargestContour(List<MatOfPoint> contours) {
@@ -117,20 +134,23 @@ public class HandGestureRecognition {
 
         // Calcular e desenhar centro
         Moments moments = Imgproc.moments(contour);
+        if (Math.abs(moments.get_m00()) < 1e-9) return;
         Point center = new Point(moments.get_m10() / moments.get_m00(), moments.get_m01() / moments.get_m00());
         Imgproc.circle(frame, center, 6, centerColor, -1);
 
         // Calcular e desenhar casco convexo
         MatOfInt hull = new MatOfInt();
+        MatOfPoint hullContour = new MatOfPoint();
+        try {
         Imgproc.convexHull(contour, hull);
 
         List<Point> hullPoints = new ArrayList<>();
+        List<Point> contourPoints = contour.toList();
         for (int i = 0; i < hull.rows(); i++) {
             int idx = (int) hull.get(i, 0)[0];
-            hullPoints.add(contour.toList().get(idx));
+            hullPoints.add(contourPoints.get(idx));
         }
 
-        MatOfPoint hullContour = new MatOfPoint();
         hullContour.fromList(hullPoints);
         Imgproc.drawContours(frame, Arrays.asList(hullContour), -1, new Scalar(255, 0, 0), 1); // Azul fino
 
@@ -138,5 +158,6 @@ public class HandGestureRecognition {
         String text = String.format("Area: %.0f", Imgproc.contourArea(contour));
         Imgproc.putText(frame, text, new Point(center.x + 15, center.y),
                 Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, new Scalar(200, 200, 200), 1);
+        } finally { hull.release(); hullContour.release(); }
     }
 }
